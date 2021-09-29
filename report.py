@@ -5,6 +5,7 @@ import base64
 import time
 import json
 import typing as T
+from collections import defaultdict
 
 wrstat_reports = glob.glob(
     "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
@@ -12,6 +13,8 @@ wrstat_reports.sort()
 
 PROJECT_DIR = "/lustre/scratch114/projects/crohns"
 DELETION_THRESHOLD = 90  # Days
+
+FILETYPES = [".sam", ".vcf"]
 
 
 class KeepStatus(enum.Enum):
@@ -91,8 +94,24 @@ class FileNode:
     def dict(self) -> T.Dict[str, T.Any]:
         return {"expired": self.expired.name, "size": self.size, "keep": self.keep.name, "children": {k: v.dict for (k, v) in self.children.items()}}
 
-    def json(self):
+    def json(self) -> str:
         return json.dumps(self.dict)
+
+    def get_filetypes(self) -> T.DefaultDict[str, T.List[int]]:
+        sizes: T.DefaultDict[str, T.List[int]] = defaultdict(lambda: [0, 0])
+        for child, node in self.children.items():
+            if len(node.children) == 0:
+                for filetype in FILETYPES:
+                    if child.endswith(filetype):
+                        sizes[filetype] = [sizes[filetype][0] +
+                                           1, sizes[filetype][1] + node.size]
+            else:
+                for child in self.children.values():
+                    for filetype, (num, size) in child.get_filetypes().items():
+                        sizes[filetype] = [sizes[filetype]
+                                           [0] + num, sizes[filetype][1] + size]
+
+        return sizes
 
 
 root_node = FileNode(Expiry.Directory, 0)
