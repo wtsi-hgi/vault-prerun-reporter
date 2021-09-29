@@ -4,6 +4,7 @@ import glob
 import base64
 import time
 import json
+import typing as T
 
 wrstat_reports = glob.glob(
     "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
@@ -26,15 +27,15 @@ class Expiry(enum.Enum):
 
 
 class FileNode:
-    def __init__(self, expired, size):
-        self.children = {}
-        self.expired = expired
-        self._fsize = size
+    def __init__(self, expired: Expiry, size: int):
+        self.children: T.Dict[str, FileNode] = {}
+        self.expired: Expiry = expired
+        self._fsize: int = size
 
-        self._size = None
-        self._keep = None
+        self._size: T.Optional[int] = None
+        self._keep: T.Optional[KeepStatus] = None
 
-    def add_child(self, path: str, expired, size):
+    def add_child(self, path: str, expired: Expiry, size: int) -> None:
         path_parts = path.strip("/").split("/")
         if path_parts[0] == "":
             return
@@ -55,14 +56,14 @@ class FileNode:
             self.children[path.split("/")[0]]._fsize = size
 
     @property
-    def size(self):
+    def size(self) -> int:
         if self._size is None:
             self._size = self._fsize + \
                 sum(x.size for x in self.children.values())
         return self._size
 
     @property
-    def keep(self):
+    def keep(self) -> KeepStatus:
         if self._keep is None:
             if self.expired is not Expiry.Directory:
                 # Files
@@ -79,7 +80,7 @@ class FileNode:
 
         return self._keep
 
-    def prune(self):
+    def prune(self) -> None:
         if self.keep != KeepStatus.Parent:
             self.children = {}
         else:
@@ -87,11 +88,11 @@ class FileNode:
                 child.prune()
 
     @property
-    def __dict__(self):
-        return {"expired": self.expired.name, "size": self.size, "keep": self.keep.name, "children": {k: v.__dict for (k, v) in self.children.items()}}
+    def dict(self) -> T.Dict[str, T.Any]:
+        return {"expired": self.expired.name, "size": self.size, "keep": self.keep.name, "children": {k: v.dict for (k, v) in self.children.items()}}
 
     def json(self):
-        return json.dumps(self.__dict__)
+        return json.dumps(self.dict)
 
 
 root_node = FileNode(Expiry.Directory, 0)
@@ -114,11 +115,11 @@ for i in range(len(PROJECT_DIR.split("/"))):
 root_node.size  # populate all the size fields
 root_node.prune()
 
-to_delete = []
-to_keep = []
+to_delete: T.List[T.Tuple[str, int]] = []
+to_keep: T.List[T.Tuple[str, int]] = []
 
 
-def fill_to_delete(path, node):
+def fill_to_delete(path: str, node: FileNode) -> None:
     if node.keep == KeepStatus.Delete:
         to_delete.append((path[1:], node.size))
     elif node.keep == KeepStatus.Parent:
@@ -126,7 +127,7 @@ def fill_to_delete(path, node):
             fill_to_delete(path + "/" + k, v)
 
 
-def fill_to_keep(path, node):
+def fill_to_keep(path: str, node: FileNode) -> None:
     if node.keep == KeepStatus.Keep:
         to_keep.append((path[1:], node.size))
     elif node.keep == KeepStatus.Parent:
@@ -146,7 +147,7 @@ class SizeUnit(enum.Enum):
     TiB = 5
 
 
-def human(size):
+def human(size: int) -> str:
     for unit in SizeUnit:
         if size < 1024 ** unit.value:
             return f"{round(size / 1024**(unit.value-1), 1)}{unit.name}"
