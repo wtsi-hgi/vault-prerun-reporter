@@ -1,1 +1,1 @@
-bsub -o /lustre/scratch119/humgen/teams/hgi/vault_pre_reports/out/%J.md -e /lustre/scratch119/humgen/teams/hgi/vault_pre_reports/err/%J.err -G hgi -R "select[mem>3000] rusage[mem=3000]" -M 3000 "report.py"
+bsub -o /lustre/scratch119/humgen/teams/hgi/vault_pre_reports/out/%J.md -e /lustre/scratch119/humgen/teams/hgi/vault_pre_reports/err/%J.err -G hgi -R "select[mem>3000] rusage[mem=3000]" -M 3000 "python3 report.py"
