@@ -52,8 +52,8 @@ class FileNode:
         else:
             # if there aren't further children, ensure the data is right,
             # as it may not be if it was made out of sequence
-            self.children[path.split("/")[0]].expired = expired
-            self.children[path.split("/")[0]]._fsize = size
+            self.children[path_parts[0]].expired = expired
+            self.children[path_parts[0]]._fsize = size
 
     @property
     def size(self) -> int:
@@ -121,7 +121,7 @@ to_keep: T.List[T.Tuple[str, int]] = []
 
 def fill_to_delete(path: str, node: FileNode) -> None:
     if node.keep == KeepStatus.Delete:
-        to_delete.append((path[1:], node.size))
+        to_delete.append((path, node.size))
     elif node.keep == KeepStatus.Parent:
         for k, v in node.children.items():
             fill_to_delete(path + "/" + k, v)
@@ -129,7 +129,7 @@ def fill_to_delete(path: str, node: FileNode) -> None:
 
 def fill_to_keep(path: str, node: FileNode) -> None:
     if node.keep == KeepStatus.Keep:
-        to_keep.append((path[1:], node.size))
+        to_keep.append((path, node.size))
     elif node.keep == KeepStatus.Parent:
         for k, v in node.children.items():
             fill_to_keep(path + "/" + k, v)
