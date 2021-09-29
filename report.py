@@ -12,6 +12,12 @@ PROJECT_DIR = "/lustre/scratch114/projects/crohns"
 DELETION_THRESHOLD = 90  # Days
 
 
+class KeepStatus(enum.Enum):
+    Keep = enum.auto()
+    Delete = enum.auto()
+    Parent = enum.auto()
+
+
 class FileNode:
     def __init__(self, expired, size):
         self.children = {}
@@ -40,12 +46,23 @@ class FileNode:
     @property
     def keep(self):
         if self._keep is None:
-            self._keep = any(
-                x.keep for x in self.children.values()) or not self.expired
+            if self.expired is not None:
+                # Files
+                self.keep = KeepStatus.Delete if self.expired else KeepStatus.Keep
+
+            else:
+                # Directories
+                if all(x.keep == KeepStatus.Delete for x in self.children.values()):
+                    self.keep = KeepStatus.Delete
+                elif all(x.keep == KeepStatus.Keep for x in self.children.values()):
+                    self.keep = KeepStatus.Keep
+                else:
+                    self.keep = KeepStatus.Parent
+
         return self._keep
 
     def prune(self):
-        if not any(x.keep for x in self.children.values()):
+        if self.keep != KeepStatus.Parent:
             self.children = {}
         else:
             for child in self.children.values():
@@ -58,8 +75,11 @@ with gzip.open(wrstat_reports[-1]) as f:
         wr_info = line.split()
         path = base64.b64decode(wr_info[0]).decode("UTF-8", "replace")
         if path.startswith(PROJECT_DIR):
-            root_node.add_child(path, int(wr_info[5]) < time.time(
-            ) - DELETION_THRESHOLD * 60*60*24, int(wr_info[1]))
+            if wr_info[7] == "f":
+                root_node.add_child(path, int(wr_info[5]) < time.time(
+                ) - DELETION_THRESHOLD * 60*60*24, int(wr_info[1]))
+            else:
+                root_node.add_child(path, None, int(wr_info[1]))
 
 root_node.size  # populate all the size fields
 root_node.prune()
@@ -107,11 +127,10 @@ def human(size):
 # Output in valid markdown
 print(
     f"# Report {PROJECT_DIR} - Deletion Threshold: {DELETION_THRESHOLD} days")
-print("---\n## Will Be Deleted\n```")
-print("```")
+print("## Will Be Deleted\n```")
 for p in to_delete:
     print(p[0], human(p[1]))
 print("```\n---\n## Won't Be Deleted\n```")
 for p in to_keep:
-    print(p, human(p[1]))
-print("```")
+    print(p[0], human(p[1]))
+print("```\n---")
