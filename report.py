@@ -6,6 +6,7 @@ import time
 import json
 import typing as T
 from collections import defaultdict
+from functools import cached_property
 
 wrstat_reports = glob.glob(
     "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
@@ -14,7 +15,8 @@ wrstat_reports.sort()
 PROJECT_DIR = "/lustre/scratch114/projects/crohns"
 DELETION_THRESHOLD = 90  # Days
 
-FILETYPES = [".sam", ".vcf"]
+FILETYPES = [".sam", ".vcf", ".py", ".bam", ".cram",
+             ".bcf", ".fastq", ".fasta", ".txt", ".vcf.gz", ".R", ".bed", ".log"]
 
 
 class KeepStatus(enum.Enum):
@@ -34,9 +36,6 @@ class FileNode:
         self.children: T.Dict[str, FileNode] = {}
         self.expired: Expiry = expired
         self._fsize: int = size
-
-        self._size: T.Optional[int] = None
-        self._keep: T.Optional[KeepStatus] = None
 
     def add_child(self, path: str, expired: Expiry, size: int) -> None:
         path_parts = path.strip("/").split("/")
@@ -58,30 +57,25 @@ class FileNode:
             self.children[path_parts[0]].expired = expired
             self.children[path_parts[0]]._fsize = size
 
-    @property
+    @cached_property
     def size(self) -> int:
-        if self._size is None:
-            self._size = self._fsize + \
-                sum(x.size for x in self.children.values())
-        return self._size
+        return self._fsize + \
+            sum(x.size for x in self.children.values())
 
-    @property
+    @cached_property
     def keep(self) -> KeepStatus:
-        if self._keep is None:
-            if self.expired is not Expiry.Directory:
-                # Files
-                self._keep = KeepStatus.Delete if self.expired == Expiry.Expired else KeepStatus.Keep
+        if self.expired is not Expiry.Directory:
+            # Files
+            return KeepStatus.Delete if self.expired == Expiry.Expired else KeepStatus.Keep
 
+        else:
+            # Directories
+            if all(x.keep == KeepStatus.Delete for x in self.children.values()):
+                return KeepStatus.Delete
+            elif all(x.keep == KeepStatus.Keep for x in self.children.values()):
+                return KeepStatus.Keep
             else:
-                # Directories
-                if all(x.keep == KeepStatus.Delete for x in self.children.values()):
-                    self._keep = KeepStatus.Delete
-                elif all(x.keep == KeepStatus.Keep for x in self.children.values()):
-                    self._keep = KeepStatus.Keep
-                else:
-                    self._keep = KeepStatus.Parent
-
-        return self._keep
+                return KeepStatus.Parent
 
     def prune(self) -> None:
         if self.keep != KeepStatus.Parent:
@@ -92,24 +86,31 @@ class FileNode:
 
     @property
     def dict(self) -> T.Dict[str, T.Any]:
-        return {"expired": self.expired.name, "size": self.size, "keep": self.keep.name, "children": {k: v.dict for (k, v) in self.children.items()}}
+        return {
+            "expired": self.expired.name,
+            "size": self.size,
+            "keep": self.keep.name,
+            "children": {k: v.dict for (k, v) in self.children.items()}
+        }
 
     def json(self) -> str:
         return json.dumps(self.dict)
 
-    def get_filetypes(self) -> T.DefaultDict[str, T.List[int]]:
+    @cached_property
+    def filetypes(self) -> T.DefaultDict[str, T.List[int]]:
         sizes: T.DefaultDict[str, T.List[int]] = defaultdict(lambda: [0, 0])
         for child, node in self.children.items():
             if len(node.children) == 0:
-                for filetype in FILETYPES:
-                    if child.endswith(filetype):
-                        sizes[filetype] = [sizes[filetype][0] +
-                                           1, sizes[filetype][1] + node.size]
+                if node.keep == KeepStatus.Delete:
+                    for filetype in FILETYPES:
+                        if child.endswith(filetype):
+                            sizes[filetype] = [sizes[filetype][0] +
+                                               1, sizes[filetype][1] + node.size]
             else:
                 for child in self.children.values():
-                    for filetype, (num, size) in child.get_filetypes().items():
-                        sizes[filetype] = [sizes[filetype]
-                                           [0] + num, sizes[filetype][1] + size]
+                    for filetype, details in child.filetypes.items():
+                        sizes[filetype] = [sizes[filetype][0] +
+                                           details[0], sizes[filetype][1] + details[1]]
 
         return sizes
 
@@ -131,7 +132,8 @@ for i in range(len(PROJECT_DIR.split("/"))):
     root_node.add_child("/".join(PROJECT_DIR.split("/")
                         [:i]), Expiry.Directory, 4096)
 
-root_node.size  # populate all the size fields
+root_node.size  # populate all the size fields pre-prune
+root_node.filetypes  # populates a filetypes dictionary pre-prune
 root_node.prune()
 
 to_delete: T.List[T.Tuple[str, int]] = []
@@ -176,7 +178,13 @@ def human(size: int) -> str:
 # Output in valid markdown
 print(
     f"# Report {PROJECT_DIR} - Deletion Threshold: {DELETION_THRESHOLD} days")
-print("## Will Be Deleted\n```")
+
+print("## Filetypes\n<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
+for row, details in root_node.filetypes.items():
+    print(
+        f"<tr><td>{row}</td><td>{details[0]}</td><td>{human(details[1])}</td></tr>")
+
+print("</table>\n\n## Will Be Deleted\n\n```")
 for p in to_delete:
     print(p[0], human(p[1]))
 print("```\n---\n## Won't Be Deleted\n```")
