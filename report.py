@@ -191,8 +191,8 @@ def main():
         print("<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
         for row, details in filetypes.items():
             print(
-                f"<tr><td>{row}</td><td>{details.num_files}</td><td>{details.size}</td></tr")
-        print("</table>")
+                f"<tr><td>{row}</td><td>{details.num_files}</td><td>{human(details.size)}</td></tr>")
+        print("</table>\n")
 
     # Output in valid markdown
     print(f"# Report - {PROJECT_DIR}")
