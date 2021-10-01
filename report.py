@@ -118,6 +118,32 @@ class FileNode:
         return hash((self.expired, self._fsize, *self.children.items()))
 
 
+def fill_array_of_files(path: str, node: FileNode, keep_status: KeepStatus) -> T.List[T.Tuple[str, int]]:
+    files: T.List[T.Tuple[str, int]] = []
+    if node.keep == keep_status:
+        files.append((path, node.size))
+    elif node.keep == KeepStatus.Parent:
+        for k, v in node.children.items():
+            files.extend(fill_array_of_files(
+                path + "/" + k, v, keep_status))
+    return files
+
+
+class SizeUnit(enum.Enum):
+    B = 1
+    KiB = 2
+    MiB = 3
+    GiB = 4
+    TiB = 5
+
+
+def human(size: int) -> str:
+    for unit in SizeUnit:
+        if size < 1024 ** unit.value:
+            return f"{round(size / 1024**(unit.value-1), 1)}{unit.name}"
+    return ">PiB"
+
+
 def main():
     root_node = FileNode(Expiry.Directory, 0)
     with gzip.open(wrstat_reports[-1], "rt") as f:
@@ -141,52 +167,32 @@ def main():
     root_node.filetypes  # populates a filetypes dictionary pre-prune
     root_node.prune()
 
-    to_delete: T.List[T.Tuple[str, int]] = []
-    to_keep: T.List[T.Tuple[str, int]] = []
-
-    def fill_to_delete(path: str, node: FileNode) -> None:
-        if node.keep == KeepStatus.Delete:
-            to_delete.append((path, node.size))
-        elif node.keep == KeepStatus.Parent:
-            for k, v in node.children.items():
-                fill_to_delete(path + "/" + k, v)
-
-    def fill_to_keep(path: str, node: FileNode) -> None:
-        if node.keep == KeepStatus.Keep:
-            to_keep.append((path, node.size))
-        elif node.keep == KeepStatus.Parent:
-            for k, v in node.children.items():
-                fill_to_keep(path + "/" + k, v)
-
-    fill_to_delete("", root_node)
-    fill_to_keep("", root_node)
-
-    class SizeUnit(enum.Enum):
-        B = 1
-        KiB = 2
-        MiB = 3
-        GiB = 4
-        TiB = 5
-
-    def human(size: int) -> str:
-        for unit in SizeUnit:
-            if size < 1024 ** unit.value:
-                return f"{round(size / 1024**(unit.value-1), 1)}{unit.name}"
-        return ">PiB"
+    to_delete: T.List[T.Tuple[str, int]] = fill_array_of_files(
+        "", root_node, KeepStatus.Delete)
+    to_keep: T.List[T.Tuple[str, int]] = fill_array_of_files(
+        "", root_node, KeepStatus.Keep)
 
     # Output in valid markdown
-    print(
-        f"# Report - {PROJECT_DIR} \n # Deletion Threshold: {DELETION_THRESHOLD} days \n # {datetime.datetime.now().strftime('%d/%m/%Y')}")
+    print(f"# Report - {PROJECT_DIR}")
+    # yes, there's an extra new line
+    print(f"**Deletion Threshold: {DELETION_THRESHOLD} days**\n")
+    print(datetime.datetime.now().strftime('%d/%m/%Y'))
 
-    print("## Filetypes\n<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
+    print("## Filetypes")
+    print("<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
     for row, details in root_node.filetypes.items():
         print(
             f"<tr><td>{row}</td><td>{details[0]}</td><td>{human(details[1])}</td></tr>")
+    print("</table>\n")
 
-    print("</table>\n\n## Will Be Deleted\n\n```")
+    print("## Will Be Deleted")
+    print("```")
     for p in to_delete:
         print(p[0], human(p[1]))
-    print("```\n---\n## Won't Be Deleted\n```")
+    print("```\n---")
+
+    print("## Won't Be Deleted")
+    print("```")
     for p in to_keep:
         print(p[0], human(p[1]))
     print("```\n---")
