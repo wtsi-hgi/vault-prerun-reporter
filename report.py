@@ -7,6 +7,7 @@ import json
 import typing as T
 from collections import defaultdict
 from functools import cached_property
+import datetime
 
 wrstat_reports = glob.glob(
     "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
@@ -175,7 +176,7 @@ def main():
 
     # Output in valid markdown
     print(
-        f"# Report {PROJECT_DIR} - Deletion Threshold: {DELETION_THRESHOLD} days")
+        f"# Report - {PROJECT_DIR} \n # Deletion Threshold: {DELETION_THRESHOLD} days \n # {datetime.datetime.now().strftime('%d/%m/%Y')}")
 
     print("## Filetypes\n<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
     for row, details in root_node.filetypes.items():
