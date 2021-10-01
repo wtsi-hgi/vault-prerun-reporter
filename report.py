@@ -6,7 +6,7 @@ import time
 import json
 import typing as T
 from collections import defaultdict
-from functools import cached_property
+from functools import lru_cache, cached_property
 import datetime
 import ldap
 
@@ -160,7 +160,7 @@ def human(size: int) -> str:
     return ">PiB"
 
 
-def getLDAPConnection() -> ldap.LDAPObject:
+def getLDAPConnection():
     con = ldap.initialize("ldap://ldap-ro.internal.sanger.ac.uk:389")
     # Sanger internal LDAP is public so no credentials needed
     con.bind("", "")
@@ -168,7 +168,8 @@ def getLDAPConnection() -> ldap.LDAPObject:
     return con
 
 
-def get_username(ldap_conn: ldap.LDAPObject, uid: int) -> str:
+@lru_cache
+def get_username(ldap_conn, uid: int) -> str:
     result = ldap_conn.search_s(
         "ou=people,dc=sanger,dc=ac,dc=uk", ldap.SCOPE_ONELEVEL, f"(uidNumber={uid})", ["uid"])
 
