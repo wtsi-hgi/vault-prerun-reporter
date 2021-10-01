@@ -8,6 +8,7 @@ import typing as T
 from collections import defaultdict
 from functools import cached_property
 import datetime
+import ldap
 
 wrstat_reports = glob.glob(
     "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
@@ -159,8 +160,27 @@ def human(size: int) -> str:
     return ">PiB"
 
 
+def getLDAPConnection() -> ldap.LDAPObject:
+    con = ldap.initialize("ldap://ldap-ro.internal.sanger.ac.uk:389")
+    # Sanger internal LDAP is public so no credentials needed
+    con.bind("", "")
+
+    return con
+
+
+def get_username(ldap_conn: ldap.LDAPObject, uid: int) -> str:
+    result = ldap_conn.search_s(
+        "ou=people,dc=sanger,dc=ac,dc=uk", ldap.SCOPE_ONELEVEL, f"(uidNumber={uid})", ["uid"])
+
+    try:
+        return result[0][1]["uid"][0].decode("UTF-8")
+    except IndexError:
+        return ""
+
+
 def main():
     root_node = FileNode(Expiry.Directory, 0, "")
+    ldap_conn = getLDAPConnection()
     with gzip.open(wrstat_reports[-1], "rt") as f:
         for line in f:
             wr_info = line.split()
@@ -168,7 +188,7 @@ def main():
             if path.startswith(PROJECT_DIR):
                 if wr_info[7] == "f":
                     root_node.add_child(path, Expiry.Expired if int(wr_info[5]) < time.time(
-                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), wr_info[2])
+                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), get_username(ldap_conn, int(wr_info[2])))
                 else:
                     root_node.add_child(
                         path, Expiry.Directory, int(wr_info[1]), None)
