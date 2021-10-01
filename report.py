@@ -32,25 +32,36 @@ class Expiry(enum.Enum):
     Directory = enum.auto()
 
 
+class FiletypeInfo:
+    def __init__(self):
+        self.num_files: int = 0
+        self.size: int = 0
+
+    def update(self, num: int, size: int):
+        self.num_files += num
+        self.size += size
+
+
 class FileNode:
-    def __init__(self, expired: Expiry, size: int):
+    def __init__(self, expired: Expiry, size: int, owner: T.Optional[str]):
         self.children: T.Dict[str, FileNode] = {}
         self.expired: Expiry = expired
         self._fsize: int = size
+        self.owner: T.Optional[str] = owner
 
-    def add_child(self, path: str, expired: Expiry, size: int) -> None:
+    def add_child(self, path: str, expired: Expiry, size: int, owner: T.Optional[str]) -> None:
         path_parts = path.strip("/").split("/")
         if path_parts[0] == "":
             return
 
         if path_parts[0] not in self.children:
             # if the child doesn't exist - make it
-            self.children[path_parts[0]] = FileNode(expired, size)
+            self.children[path_parts[0]] = FileNode(expired, size, owner)
 
         if len(path_parts[1:]) > 0:
             # if there's further children - make them
             self.children[path_parts[0]].add_child(
-                "/".join(path_parts[1:]), expired, size)
+                "/".join(path_parts[1:]), expired, size, owner)
 
         else:
             # if there aren't further children, ensure the data is right,
@@ -98,19 +109,23 @@ class FileNode:
         return json.dumps(self.dict)
 
     @cached_property
-    def filetypes(self) -> T.DefaultDict[str, T.List[int]]:
-        sizes: T.DefaultDict[str, T.List[int]] = defaultdict(lambda: [0, 0])
+    def filetypes(self) -> T.DefaultDict[str, T.DefaultDict[str, FiletypeInfo]]:
+        sizes: T.DefaultDict[str, T.DefaultDict[str, FiletypeInfo]] = defaultdict(
+            lambda: defaultdict(FiletypeInfo))
         for child, node in self.children.items():
-            if len(node.children) == 0:
+            if len(node.children) == 0 and node.owner:
                 if node.keep == KeepStatus.Delete:
                     for filetype in FILETYPES:
                         if child.endswith(filetype):
-                            sizes[filetype] = [sizes[filetype][0] +
-                                               1, sizes[filetype][1] + node.size]
+                            sizes[node.owner][filetype].update(1, node.size)
+                            break
+                    else:
+                        sizes[node.owner]["Other"].update(1, node.size)
             else:
-                for filetype, details in node.filetypes.items():
-                    sizes[filetype] = [sizes[filetype][0] +
-                                       details[0], sizes[filetype][1] + details[1]]
+                for owner, filetypes in node.filetypes.items():
+                    for filetype, details in filetypes.items():
+                        sizes[owner][filetype].update(
+                            details.num_files, details.size)
 
         return sizes
 
@@ -145,7 +160,7 @@ def human(size: int) -> str:
 
 
 def main():
-    root_node = FileNode(Expiry.Directory, 0)
+    root_node = FileNode(Expiry.Directory, 0, "")
     with gzip.open(wrstat_reports[-1], "rt") as f:
         for line in f:
             wr_info = line.split()
@@ -153,15 +168,15 @@ def main():
             if path.startswith(PROJECT_DIR):
                 if wr_info[7] == "f":
                     root_node.add_child(path, Expiry.Expired if int(wr_info[5]) < time.time(
-                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]))
+                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), wr_info[2])
                 else:
                     root_node.add_child(
-                        path, Expiry.Directory, int(wr_info[1]))
+                        path, Expiry.Directory, int(wr_info[1]), None)
 
     # Ensure the top levels are all Expiry.Directory and KeepStatus.Parent
     for i in range(len(PROJECT_DIR.split("/"))):
         root_node.add_child("/".join(PROJECT_DIR.split("/")
-                            [:i]), Expiry.Directory, 4096)
+                            [:i]), Expiry.Directory, 4096, None)
 
     root_node.size  # populate all the size fields pre-prune
     root_node.filetypes  # populates a filetypes dictionary pre-prune
@@ -172,6 +187,13 @@ def main():
     to_keep: T.List[T.Tuple[str, int]] = fill_array_of_files(
         "", root_node, KeepStatus.Keep)
 
+    def _print_filetypes_table(filetypes: T.DefaultDict[str, FiletypeInfo]) -> None:
+        print("<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
+        for row, details in filetypes.items():
+            print(
+                f"<tr><td>{row}</td><td>{details.num_files}</td><td>{details.size}</td></tr")
+        print("</table>")
+
     # Output in valid markdown
     print(f"# Report - {PROJECT_DIR}")
     # yes, there's an extra new line
@@ -179,11 +201,9 @@ def main():
     print(datetime.datetime.now().strftime('%d/%m/%Y'))
 
     print("## Filetypes")
-    print("<table><tr><th>Filetype</th><th>Num. of Files</th><th>Space</th></tr>")
-    for row, details in root_node.filetypes.items():
-        print(
-            f"<tr><td>{row}</td><td>{details[0]}</td><td>{human(details[1])}</td></tr>")
-    print("</table>\n")
+    for user, user_filetypes in root_node.filetypes.items():
+        print(f"### {user}")
+        _print_filetypes_table(user_filetypes)
 
     print("## Will Be Deleted")
     print("```")
