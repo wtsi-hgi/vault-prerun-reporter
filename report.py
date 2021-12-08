@@ -188,8 +188,13 @@ def main():
             path = base64.b64decode(wr_info[0]).decode("UTF-8", "replace")
             if path.startswith(PROJECT_DIR):
                 if wr_info[7] == "f":
+                    try:
+                        uname = get_username(ldap_conn, int(wr_info[2]))
+                    except ldap.SERVER_DOWN:
+                        ldap_conn = getLDAPConnection()
+                        uname = get_username(ldap_conn, int(wr_info[2]))
                     root_node.add_child(path, Expiry.Expired if int(wr_info[5]) < time.time(
-                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), get_username(ldap_conn, int(wr_info[2])))
+                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), uname)
                 else:
                     root_node.add_child(
                         path, Expiry.Directory, int(wr_info[1]), None)
