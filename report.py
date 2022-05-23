@@ -180,7 +180,7 @@ def main():
             path = base64.b64decode(wr_info[0]).decode("UTF-8", "replace")
             if path.startswith(PROJECT_DIR):
                 if wr_info[7] == "f":
-                    root_node.add_child(path, Expiry.Expired if int(wr_info[5]) < time.time(
+                    root_node.add_child(path, Expiry.Expired if max([int(wr_info[4]), int(wr_info[5]), int(wr_info[6])]) < time.time(
                     ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), get_username(int(wr_info[2])))
                 else:
                     root_node.add_child(
