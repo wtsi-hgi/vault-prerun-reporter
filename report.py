@@ -8,8 +8,7 @@ import typing as T
 from collections import defaultdict
 from functools import lru_cache, cached_property
 import datetime
-import ldap
-import sys
+import pwd
 import argparse
 import re
 
@@ -20,7 +19,9 @@ FILETYPES = [".sam", ".vcf", ".py", ".bam", ".cram",
 
 # The next 2 variables are re-set if this is __main__; see end of file.
 PROJECT_DIR = ""
-wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*.stats.gz")
+wrstat_reports = glob.glob(
+    f"/lustre/scratch123/admin/team94/wrstat/output/*.stats.gz")
+
 
 class KeepStatus(enum.Enum):
     Keep = enum.auto()
@@ -161,22 +162,11 @@ def human(size: int) -> str:
     return ">PiB"
 
 
-def getLDAPConnection():
-    con = ldap.initialize("ldap://ldap-ro.internal.sanger.ac.uk:389")
-    # Sanger internal LDAP is public so no credentials needed
-    con.bind("", "")
-
-    return con
-
-
-@lru_cache
-def get_username(ldap_conn, uid: int) -> str:
-    result = ldap_conn.search_s(
-        "ou=people,dc=sanger,dc=ac,dc=uk", ldap.SCOPE_ONELEVEL, f"(uidNumber={uid})", ["uid"])
-
+@lru_cache(maxsize=None)
+def get_username(uid: int) -> str:
     try:
-        return result[0][1]["uid"][0].decode("UTF-8")
-    except IndexError:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
         return ""
 
 
@@ -184,20 +174,14 @@ def main():
     wrstat_reports.sort()
 
     root_node = FileNode(Expiry.Directory, 0, "")
-    ldap_conn = getLDAPConnection()
     with gzip.open(wrstat_reports[-1], "rt") as f:
         for line in f:
             wr_info = line.split()
             path = base64.b64decode(wr_info[0]).decode("UTF-8", "replace")
             if path.startswith(PROJECT_DIR):
                 if wr_info[7] == "f":
-                    try:
-                        uname = get_username(ldap_conn, int(wr_info[2]))
-                    except ldap.SERVER_DOWN:
-                        ldap_conn = getLDAPConnection()
-                        uname = get_username(ldap_conn, int(wr_info[2]))
-                    root_node.add_child(path, Expiry.Expired if int(wr_info[5]) < time.time(
-                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), uname)
+                    root_node.add_child(path, Expiry.Expired if max([int(wr_info[4]), int(wr_info[5]), int(wr_info[6])]) < time.time(
+                    ) - DELETION_THRESHOLD * 60*60*24 else Expiry.InDate, int(wr_info[1]), get_username(int(wr_info[2])))
                 else:
                     root_node.add_child(
                         path, Expiry.Directory, int(wr_info[1]), None)
@@ -249,12 +233,14 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("project_dir", help="The /lustre project directory path you want a report on.")
+    parser.add_argument(
+        "project_dir", help="The /lustre project directory path you want a report on.")
     args = parser.parse_args()
     PROJECT_DIR = args.project_dir
 
     scratch_regex = re.compile('\/(scratch\d+)\/')
     sr_match = scratch_regex.search(PROJECT_DIR)
-    wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*_{sr_match.group(1)}.*.stats.gz")
+    wrstat_reports = glob.glob(
+        f"/lustre/scratch123/admin/team94/wrstat/output/*_{sr_match.group(1)}.*.stats.gz")
 
     main()
