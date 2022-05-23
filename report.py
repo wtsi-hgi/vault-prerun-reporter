@@ -9,12 +9,21 @@ from collections import defaultdict
 from functools import lru_cache, cached_property
 import datetime
 import ldap
+import sys
+import argparse
+import re
 
-wrstat_reports = glob.glob(
-    "/lustre/scratch114/teams/hgi/lustre_reports/wrstat/data/*_scratch114.*.*.stats.gz")
+parser = argparse.ArgumentParser()
+parser.add_argument("project_dir", help="The /lustre project directory path you want a report on.")
+args = parser.parse_args()
+
+PROJECT_DIR = args.project_dir
+
+scratch_regex = re.compile('\/(scratch\d+)\/')
+sr_match = scratch_regex.search(PROJECT_DIR)
+wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*_{sr_match.group(1)}.*.stats.gz")
 wrstat_reports.sort()
 
-PROJECT_DIR = "/lustre/scratch114/projects/crohns"
 DELETION_THRESHOLD = 90  # Days
 
 FILETYPES = [".sam", ".vcf", ".py", ".bam", ".cram",
@@ -221,7 +230,7 @@ def main():
         print("</table>\n")
 
     # Output in valid markdown
-    print(f"# Report - {PROJECT_DIR}")
+    print(f"# Report - {PROJECT_DIR} (using {wrstat_reports[-1]})")
     # yes, there's an extra new line
     print(f"**Deletion Threshold: {DELETION_THRESHOLD} days**\n")
     print(datetime.datetime.now().strftime('%d/%m/%Y'))

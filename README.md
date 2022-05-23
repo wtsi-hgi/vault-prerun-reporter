@@ -2,16 +2,17 @@
 
 Generates a report on a project directory saying what Vault will delete when run on that project.
 
+Provide the absolute path to the project directory of interest.
+
 ---
 
-To change project or soft-deletion threshold, the first few lines in `report.py` can be changed.
+To change the soft-deletion threshold, `report.py` must be edited:
 
 ```python
-PROJECT_DIR = "/lustre/scratch114/projects/crohns"
 DELETION_THRESHOLD = 10  # Days
 ```
 
-Ensure the `glob` search is also looking for the correct volume
+Ensure the `glob` search is also looking for the correct volume:
 
 ```python
 wrstat_reports = glob.glob(...)
@@ -19,4 +20,9 @@ wrstat_reports = glob.glob(...)
 
 ---
 
-Run as a `bsub` job using `run.sh`. That script also specifies the output file, with `%J` being the job number. The output is valid markdown (`.md`)
+Run as a `bsub` job using `run.sh`, providing the project directory.
+
+That script also specifies the output file, with `%J` being the job number.
+
+The output is valid markdown (`.md`), and ends up in /nfs/hgi/vault/pre_reports.
+You should manually clean up this directory once you're done with your report.
