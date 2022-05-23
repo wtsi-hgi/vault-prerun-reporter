@@ -13,22 +13,14 @@ import sys
 import argparse
 import re
 
-parser = argparse.ArgumentParser()
-parser.add_argument("project_dir", help="The /lustre project directory path you want a report on.")
-args = parser.parse_args()
-
-PROJECT_DIR = args.project_dir
-
-scratch_regex = re.compile('\/(scratch\d+)\/')
-sr_match = scratch_regex.search(PROJECT_DIR)
-wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*_{sr_match.group(1)}.*.stats.gz")
-wrstat_reports.sort()
-
 DELETION_THRESHOLD = 90  # Days
 
 FILETYPES = [".sam", ".vcf", ".py", ".bam", ".cram",
              ".bcf", ".fastq", ".fasta", ".txt", ".vcf.gz", ".R", ".bed", ".log"]
 
+# The next 2 variables are re-set if this is __main__; see end of file.
+PROJECT_DIR = ""
+wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*.stats.gz")
 
 class KeepStatus(enum.Enum):
     Keep = enum.auto()
@@ -189,6 +181,8 @@ def get_username(ldap_conn, uid: int) -> str:
 
 
 def main():
+    wrstat_reports.sort()
+
     root_node = FileNode(Expiry.Directory, 0, "")
     ldap_conn = getLDAPConnection()
     with gzip.open(wrstat_reports[-1], "rt") as f:
@@ -254,4 +248,13 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("project_dir", help="The /lustre project directory path you want a report on.")
+    args = parser.parse_args()
+    PROJECT_DIR = args.project_dir
+
+    scratch_regex = re.compile('\/(scratch\d+)\/')
+    sr_match = scratch_regex.search(PROJECT_DIR)
+    wrstat_reports = glob.glob(f"/lustre/scratch123/admin/team94/wrstat/output/*_{sr_match.group(1)}.*.stats.gz")
+
     main()
