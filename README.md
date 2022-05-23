@@ -26,3 +26,11 @@ That script also specifies the output file, with `%J` being the job number.
 
 The output is valid markdown (`.md`), and ends up in /nfs/hgi/vault/pre_reports.
 You should manually clean up this directory once you're done with your report.
+
+---
+
+To run the test script:
+
+```
+python3 -m unittest discover
+```
