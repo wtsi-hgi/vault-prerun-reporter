@@ -12,7 +12,7 @@ import pwd
 import argparse
 import re
 
-DELETION_THRESHOLD = 90  # Days
+DELETION_THRESHOLD = 180  # Days
 
 FILETYPES = [".sam", ".vcf", ".py", ".bam", ".cram",
              ".bcf", ".fastq", ".fasta", ".txt", ".vcf.gz", ".R", ".bed", ".log"]
